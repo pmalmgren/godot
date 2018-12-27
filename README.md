@@ -11,7 +11,7 @@ Here's what you need to get started:
   - Docker
 
 ```
-$ godot build --image-tag dev-env --output-dir . github.com/pmalmgren/godot
+$ godot build --image-tag dev-env github.com/pmalmgren/godot
 $ docker run --rm -it godot-development-environment
 dev-shell$
 ```

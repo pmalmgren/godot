@@ -42,35 +42,36 @@ type GoDotConfig struct {
 	Packages           []string `yaml:"packages"`
 	SystemSetup        []string `yaml:"system-setup"`
 	UserSetup          []string `yaml:"user-setup"`
-	ImageTag           string   `yaml:"image-tag"`
 	EntryPoint         string   "yaml:`entrypoint`"
+	ImageTag           string
+	OutputDirectory    string
 	RepoDirectory      string
 	DockerfileRendered string
 }
 
 // fetchReadme grabs the README.md from the repository
 func fetchReadme(u *url.URL) (string, string, error) {
-	r := fmt.Sprintf("/tmp%s", u.EscapedPath())
-	if err := os.MkdirAll(r, os.ModePerm); err != nil {
-		return "", "", err
+	localRepoDirectory, err := ioutil.TempDir("/tmp", u.EscapedPath())
+	if err != nil {
+		return "", "", fmt.Errorf("Error creating temporary directory: %v", err)
 	}
 
-	_, err := git.PlainClone(r, false, &git.CloneOptions{
+	_, err = git.PlainClone(localRepoDirectory, false, &git.CloneOptions{
 		URL:   u.String(),
 		Depth: 1,
 	})
 
 	if err != nil && err != git.ErrRepositoryAlreadyExists {
-		return "", "", err
+		return "", "", fmt.Errorf("Error cloning repository: %v", err)
 	}
 
-	readmePath := fmt.Sprintf("%s/README.md", r)
+	readmePath := fmt.Sprintf("%s/README.md", localRepoDirectory)
 
 	if _, err := os.Stat(readmePath); err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("README.md does not exist at %s", readmePath)
 	}
 
-	return readmePath, r, nil
+	return readmePath, localRepoDirectory, nil
 }
 
 // parseConfig parses out the godot configuration from a README file
@@ -78,12 +79,12 @@ func parseConfig(readmePath string, repoPath string) (*GoDotConfig, error) {
 	f, err := os.OpenFile(readmePath, os.O_RDONLY, os.ModePerm)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error opening README.md: %v", err)
 	}
 
 	defer func() {
 		if err := f.Close(); err != nil {
-			fmt.Println("Error closing README.md")
+			log.Printf("Error closing README.md: %v", err)
 		}
 	}()
 
@@ -115,7 +116,7 @@ func parseConfig(readmePath string, repoPath string) (*GoDotConfig, error) {
 
 	var gdc GoDotConfig
 	if err := yaml.Unmarshal([]byte(rawConfig), &gdc); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error reading repository configuration: %v", err)
 	}
 	gdc.RepoDirectory = repoPath
 	return &gdc, nil
@@ -125,27 +126,29 @@ func parseConfig(readmePath string, repoPath string) (*GoDotConfig, error) {
 func buildDockerfile(gdc *GoDotConfig, repoPath string) (string, error) {
 	t, err := template.ParseFiles("Dockerfile.tmpl")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Error parsing template file: %v", err)
 	}
 
 	f, err := os.Create("Dockerfile.godot")
+	if err != nil {
+		return "", fmt.Errorf("Error creating rendered Dockerfile.godot: %v", err)
+	}
 	defer func() {
 		if err := f.Close(); err != nil {
 			log.Printf("Error closing Dockerfile")
 		}
 	}()
-	if err != nil {
-		return "", err
-	}
 	var tpl bytes.Buffer
 	err = t.Execute(&tpl, gdc)
 
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Error rendering Dockerfile.tmpl: %v", err)
 	}
 	renderedTemplate := tpl.String()
 
-	f.Write([]byte(renderedTemplate))
+	if _, err := f.Write([]byte(renderedTemplate)); err != nil {
+		return "", fmt.Errorf("Error writing rendered template to file: %v", err)
+	}
 
 	return renderedTemplate, nil
 }
@@ -153,6 +156,9 @@ func buildDockerfile(gdc *GoDotConfig, repoPath string) (string, error) {
 // optionally, build the docker image
 func buildDockerimage(gdc *GoDotConfig) error {
 	tmpDir, err := ioutil.TempDir("/tmp/", "godot-build-context")
+	if err != nil {
+		return fmt.Errorf("Error creating temporary directory: %v", err)
+	}
 	defer func() {
 		if err := os.RemoveAll(tmpDir); err != nil {
 			log.Printf("Error removing temporary directory: %v", err)
@@ -160,31 +166,47 @@ func buildDockerimage(gdc *GoDotConfig) error {
 	}()
 	err = ioutil.WriteFile(fmt.Sprintf("%s/Dockerfile", tmpDir), []byte(gdc.DockerfileRendered), 0666)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error writing to Docker build context file: %v", err)
 	}
 
 	tar := new(archivex.TarFile)
-	tar.Create("/tmp/godot-buildcontext.tar")
+	var closed bool
+	if err := tar.Create("/tmp/godot-buildcontext.tar"); err != nil {
+		log.Printf("Error creating Docker build context tarfile: %v", err)
+	}
 
 	defer func() {
+		if closed {
+			return
+		}
 		if err := tar.Close(); err != nil {
 			log.Printf("Error closing build context: %v", err)
 		}
 	}()
 	if err := tar.AddAll(fmt.Sprintf("%s/%s", gdc.RepoDirectory, gdc.DotfileDirectory), true); err != nil {
-		return err
+		return fmt.Errorf("Error adding Dotfiles to context file: %v", err)
 	}
 	if err := tar.AddAll(tmpDir, false); err != nil {
-		return err
+		return fmt.Errorf("Error adding Dockerfile to context file: %v", err)
 	}
-	tar.Close()
+	if err := tar.Close(); err != nil {
+		return fmt.Errorf("Error closing Docker build context file: %v", err)
+	}
+	closed = true
 
 	dockerBuildContext, err := os.Open("/tmp/godot-buildcontext.tar")
-	defer dockerBuildContext.Close()
+	if err != nil {
+		return fmt.Errorf("Error opening build context tarfile: %v", err)
+	}
+	defer func() {
+		if err := dockerBuildContext.Close(); err != nil {
+			log.Printf("Error closing docker build context file: %v", err)
+		}
+	}()
 
 	cli, err := client.NewClientWithOpts(client.WithVersion("1.39"))
 	if err != nil {
-		return err
+		return fmt.Errorf("Error initializing Docker client: %v", err)
 	}
 	options := types.ImageBuildOptions{
 		SuppressOutput: false,
@@ -196,9 +218,13 @@ func buildDockerimage(gdc *GoDotConfig) error {
 	}
 	buildResponse, err := cli.ImageBuild(context.Background(), dockerBuildContext, options)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error building Docker image: %v", err)
 	}
-	defer buildResponse.Body.Close()
+	defer func() {
+		if err := buildResponse.Body.Close(); err != nil {
+			log.Printf("Error closing Docker build response body: %v", err)
+		}
+	}()
 
 	p := make([]byte, 512)
 	for {
@@ -208,8 +234,7 @@ func buildDockerimage(gdc *GoDotConfig) error {
 				fmt.Println(string(p[:n]))
 				break
 			}
-			fmt.Printf("Error: %v\n", err)
-			return err
+			return fmt.Errorf("Error reading from Docker build response: %v", err)
 		}
 		fmt.Println(string(p[:n]))
 	}
@@ -218,23 +243,25 @@ func buildDockerimage(gdc *GoDotConfig) error {
 }
 
 // godot builds and runs the docker image
-func godot(u *url.URL) error {
-	r, p, err := fetchReadme(u)
+func godot(u *url.URL, imageTag string, outputDir string) error {
+	repoPath, p, err := fetchReadme(u)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error reading from Git repository: %v", err)
 	}
-	gdc, err := parseConfig(r, p)
+	gdc, err := parseConfig(repoPath, p)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error parsing README.md configuration: %v", err)
 	}
+	gdc.ImageTag = imageTag
+	gdc.OutputDirectory = outputDir
 	renderedDockerfile, err := buildDockerfile(gdc, p)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error rendering Dockerfile.tmpl: %v", err)
 	}
 	gdc.DockerfileRendered = renderedDockerfile
 	err = buildDockerimage(gdc)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error building Docker Image: %v", err)
 	}
 	return nil
 }
@@ -243,22 +270,33 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "godot"
 	app.Usage = "godot run https://github.com/pmalmgren/godot"
-	app.Version = "0.0.0"
-
+	app.Version = "0.0.1"
 	app.Commands = []cli.Command{
 		{
 			Name:    "run",
 			Aliases: []string{"r"},
 			Action: func(ctx *cli.Context) error {
-				repoStr := ctx.Args().Get(0)
+				repoStr := ctx.Args().Get(len(ctx.Args()) - 1)
 				u, err := url.Parse(repoStr)
 				if err != nil {
 					return err
 				}
-				if err := godot(u); err != nil {
+				if err := godot(u, ctx.String("image-tag"), ctx.String("output-dir")); err != nil {
 					return err
 				}
 				return nil
+			},
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "image-tag",
+					Value: "godot-dev",
+					Usage: "image tag for the Docker image",
+				},
+				cli.StringFlag{
+					Name:  "output-dir",
+					Value: ".",
+					Usage: "Output directory for Dockerfile",
+				},
 			},
 		},
 	}
