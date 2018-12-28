@@ -33,6 +33,7 @@ import (
 const (
 	confHeader        = "## godot configuration"
 	confBoundaryToken = "```"
+	dockerVersion     = "1.39"
 )
 
 // GoDotConfig contains the relevant configuration to pass to the Dockerfile template
@@ -189,7 +190,7 @@ func buildDockerimage(gdc *GoDotConfig) error {
 		return fmt.Errorf("Error opening build context tarfile: %v", err)
 	}
 
-	cli, err := client.NewClientWithOpts(client.WithVersion("1.39"))
+	cli, err := client.NewClientWithOpts(client.WithVersion(dockerVersion))
 	if err != nil {
 		return fmt.Errorf("Error initializing Docker client: %v", err)
 	}
