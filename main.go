@@ -51,7 +51,7 @@ type GoDotConfig struct {
 
 // fetchReadme grabs the README.md from the repository
 func fetchReadme(u *url.URL) (string, string, error) {
-	localRepoDirectory, err := ioutil.TempDir("/tmp", u.EscapedPath())
+	localRepoDirectory, err := ioutil.TempDir("/tmp", "godot-repo")
 	if err != nil {
 		return "", "", fmt.Errorf("Error creating temporary directory: %v", err)
 	}
@@ -170,19 +170,10 @@ func buildDockerimage(gdc *GoDotConfig) error {
 	}
 
 	tar := new(archivex.TarFile)
-	var closed bool
 	if err := tar.Create("/tmp/godot-buildcontext.tar"); err != nil {
 		log.Printf("Error creating Docker build context tarfile: %v", err)
 	}
 
-	defer func() {
-		if closed {
-			return
-		}
-		if err := tar.Close(); err != nil {
-			log.Printf("Error closing build context: %v", err)
-		}
-	}()
 	if err := tar.AddAll(fmt.Sprintf("%s/%s", gdc.RepoDirectory, gdc.DotfileDirectory), true); err != nil {
 		return fmt.Errorf("Error adding Dotfiles to context file: %v", err)
 	}
@@ -192,17 +183,11 @@ func buildDockerimage(gdc *GoDotConfig) error {
 	if err := tar.Close(); err != nil {
 		return fmt.Errorf("Error closing Docker build context file: %v", err)
 	}
-	closed = true
 
 	dockerBuildContext, err := os.Open("/tmp/godot-buildcontext.tar")
 	if err != nil {
 		return fmt.Errorf("Error opening build context tarfile: %v", err)
 	}
-	defer func() {
-		if err := dockerBuildContext.Close(); err != nil {
-			log.Printf("Error closing docker build context file: %v", err)
-		}
-	}()
 
 	cli, err := client.NewClientWithOpts(client.WithVersion("1.39"))
 	if err != nil {
@@ -269,11 +254,11 @@ func godot(u *url.URL, imageTag string, outputDir string) error {
 func main() {
 	app := cli.NewApp()
 	app.Name = "godot"
-	app.Usage = "godot run https://github.com/pmalmgren/godot"
+	app.Usage = "godot build --image-tag godot-dev https://github.com/pmalmgren/godot"
 	app.Version = "0.0.1"
 	app.Commands = []cli.Command{
 		{
-			Name:    "run",
+			Name:    "build",
 			Aliases: []string{"r"},
 			Action: func(ctx *cli.Context) error {
 				repoStr := ctx.Args().Get(len(ctx.Args()) - 1)

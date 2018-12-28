@@ -12,7 +12,7 @@ Here's what you need to get started:
 
 ```
 $ godot build --image-tag dev-env github.com/pmalmgren/godot
-$ docker run --rm -it godot-development-environment
+$ docker run --rm -it dev-env
 dev-shell$
 ```
 
