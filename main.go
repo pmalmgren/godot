@@ -12,9 +12,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/url"
@@ -22,9 +20,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/jhoonb/archivex"
+	"github.com/pmalmgren/godot/image"
 	"github.com/urfave/cli"
 	git "gopkg.in/src-d/go-git.v4"
 	yaml "gopkg.in/yaml.v2"
@@ -169,62 +166,22 @@ func buildDockerimage(gdc *GoDotConfig) error {
 	if err != nil {
 		return fmt.Errorf("Error writing to Docker build context file: %v", err)
 	}
-
-	tar := new(archivex.TarFile)
-	if err := tar.Create("/tmp/godot-buildcontext.tar"); err != nil {
-		log.Printf("Error creating Docker build context tarfile: %v", err)
-	}
-
-	if err := tar.AddAll(fmt.Sprintf("%s/%s", gdc.RepoDirectory, gdc.DotfileDirectory), true); err != nil {
-		return fmt.Errorf("Error adding Dotfiles to context file: %v", err)
-	}
-	if err := tar.AddAll(tmpDir, false); err != nil {
-		return fmt.Errorf("Error adding Dockerfile to context file: %v", err)
-	}
-	if err := tar.Close(); err != nil {
-		return fmt.Errorf("Error closing Docker build context file: %v", err)
-	}
-
-	dockerBuildContext, err := os.Open("/tmp/godot-buildcontext.tar")
+	dockerfilePath := fmt.Sprintf("%s/Dockerfile", tmpDir)
+	dotfileDirectory := fmt.Sprintf("%s/%s", gdc.RepoDirectory, gdc.DotfileDirectory)
+	context, err := image.BuildDockerContext(dockerfilePath, dotfileDirectory)
 	if err != nil {
-		return fmt.Errorf("Error opening build context tarfile: %v", err)
+		log.Printf("Error creating Docker build context tarfile: %v", err)
 	}
 
 	cli, err := client.NewClientWithOpts(client.WithVersion(dockerVersion))
 	if err != nil {
 		return fmt.Errorf("Error initializing Docker client: %v", err)
 	}
-	options := types.ImageBuildOptions{
-		SuppressOutput: false,
-		Remove:         true,
-		ForceRemove:    true,
-		PullParent:     true,
-		Tags:           []string{fmt.Sprintf("%s:latest", gdc.ImageTag)},
-		Dockerfile:     "Dockerfile",
-	}
-	buildResponse, err := cli.ImageBuild(context.Background(), dockerBuildContext, options)
+
+	err = image.BuildDockerImage(cli, context, gdc.ImageTag)
 	if err != nil {
 		return fmt.Errorf("Error building Docker image: %v", err)
 	}
-	defer func() {
-		if err := buildResponse.Body.Close(); err != nil {
-			log.Printf("Error closing Docker build response body: %v", err)
-		}
-	}()
-
-	p := make([]byte, 512)
-	for {
-		n, err := buildResponse.Body.Read(p)
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println(string(p[:n]))
-				break
-			}
-			return fmt.Errorf("Error reading from Docker build response: %v", err)
-		}
-		fmt.Println(string(p[:n]))
-	}
-
 	return nil
 }
 
