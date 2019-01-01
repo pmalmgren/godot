@@ -11,7 +11,7 @@ Here's what you need to get started:
   - Docker
 
 ```
-$ godot build --image-tag dev-env github.com/pmalmgren/godot
+$ godot build github.com/pmalmgren/godot
 $ docker run --rm -it dev-env
 dev-shell$
 ```
@@ -28,6 +28,7 @@ dev-shell$
 username: godot
 dotfile-directory: dotfiles
 entrypoint: zsh
+image-tag: dev-env
 
 packages:
   - neovim
@@ -38,9 +39,6 @@ packages:
 
 # system-setup runs as root, define volumes etc.
 system-setup:
-  - VOLUME /home/$username/.ssh
-  - VOLUME /home/$username/.credentials/
-  - VOLUME /home/$username/persistent/
   - RUN chsh -s /usr/bin/zsh $username
 
 # user-setup runs as the user defined above in username.
