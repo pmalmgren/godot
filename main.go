@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/docker/docker/client"
 	"github.com/pmalmgren/godot/conf"
@@ -47,6 +48,11 @@ func buildDockerimage(gdc *conf.GoDotConfig) error {
 	if err != nil {
 		log.Printf("Error creating Docker build context tarfile: %v", err)
 	}
+	defer func() {
+		if err := os.RemoveAll(filepath.Dir(context)); err != nil {
+			log.Printf("Error removing temporary build context: %v", err)
+		}
+	}()
 
 	cli, err := client.NewClientWithOpts(client.WithVersion(dockerVersion))
 	if err != nil {
