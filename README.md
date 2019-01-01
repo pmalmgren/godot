@@ -18,7 +18,7 @@ dev-shell$
 
 ## Configuration
 
-`godot` uses a section in your project's `README.md` to build a Docker image. A comprehensive example is given below.
+`godot` uses a YAML code block in a special section of your project's `README.md` to build a Docker image. A comprehensive example is given below.
 
 ## godot configuration
 
