@@ -11,9 +11,8 @@ package conf
 import "net/url"
 
 const (
-	confHeader         = "## godot configuration"
-	confBoundaryToken  = "```"
-	dockerfileTemplate = "Dockerfile.tmpl"
+	confHeader        = "## godot configuration"
+	confBoundaryToken = "```"
 )
 
 // GoDotConfig contains the relevant configuration to pass to the Dockerfile template

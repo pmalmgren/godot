@@ -10,7 +10,10 @@
 package image
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,7 +28,11 @@ type imagebuilder interface {
 	ImageBuild(context.Context, io.Reader, types.ImageBuildOptions) (types.ImageBuildResponse, error)
 }
 
-// BuildDockerImage builds a Docker image from a context
+type dockerCliOutput struct {
+	Stream string `json:"stream"`
+}
+
+// BuildDockerImage builds a Docker image from a directory, specified on contextPath
 func BuildDockerImage(cli imagebuilder, contextPath string, tag string) error {
 	dockerBuildContext, err := os.Open(contextPath)
 	if err != nil {
@@ -49,17 +56,24 @@ func BuildDockerImage(cli imagebuilder, contextPath string, tag string) error {
 		}
 	}()
 
-	p := make([]byte, 512)
+	log.Printf("Building Docker image from build context %s", contextPath)
+
+	reader := bufio.NewReader(buildResponse.Body)
 	for {
-		n, err := buildResponse.Body.Read(p)
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println(string(p[:n]))
-				break
-			}
-			return fmt.Errorf("Error reading from Docker build response: %v", err)
+		line, err := reader.ReadBytes('\r')
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("Error reading from Docker: %v", err)
 		}
-		fmt.Println(string(p[:n]))
+
+		line = bytes.TrimSpace(line)
+		var output dockerCliOutput
+		json.Unmarshal(line, &output)
+
+		fmt.Printf("%s", output.Stream)
+
+		if err != nil {
+			break
+		}
 	}
 
 	return nil
