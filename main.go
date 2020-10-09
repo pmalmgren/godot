@@ -27,7 +27,7 @@ const (
 	dockerVersion = "1.39"
 )
 
-// optionally, build the docker image
+// builds the docker image
 func buildDockerimage(gdc *conf.GoDotConfig) error {
 	tmpDir, err := ioutil.TempDir("/tmp/", "godot-build-context")
 	if err != nil {
