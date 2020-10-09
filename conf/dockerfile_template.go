@@ -1,4 +1,6 @@
-FROM debian:stretch-slim
+package conf
+
+const dockerfileTemplate = `FROM debian:stretch-slim
 
 MAINTAINER Godot
 
@@ -42,5 +44,4 @@ RUN ls -la | grep ^d | awk '{ print $9 }' | grep -v '^\.\+$' | xargs stow
 USER $username
 WORKDIR /home/$username
 
-CMD ["{{.EntryPoint}}"]
-
+CMD ["{{.EntryPoint}}"]`

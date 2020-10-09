@@ -97,7 +97,7 @@ func ConfigFromReadme(r *Repository) (*GoDotConfig, error) {
 
 // BuildDockerfile applies a GoDotConfig object to the Dockerfile.tmpl file
 func BuildDockerfile(gdc *GoDotConfig) (string, error) {
-	t, err := template.ParseFiles(dockerfileTemplate)
+	t, err := template.New("Dockerfile").Parse(dockerfileTemplate)
 	if err != nil {
 		return "", fmt.Errorf("Error parsing template file: %v", err)
 	}
