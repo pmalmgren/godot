@@ -11,7 +11,8 @@ Here's what you need to get started:
   - Docker
 
 ```
-$ godot build github.com/pmalmgren/godot
+$ go get github.com/pmalmgren/godot
+$ godot build https://github.com/pmalmgren/godot
 $ docker run --rm -it dev-env
 dev-shell$
 ```
@@ -31,7 +32,6 @@ entrypoint: zsh
 image-tag: dev-env
 
 packages:
-  - neovim
   - git
   - tmux
   - zsh
